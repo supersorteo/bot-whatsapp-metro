@@ -1,6 +1,6 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
@@ -9,8 +9,8 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Configurar OpenAI
-openai.api_key = os.getenv('OPENAI_API_KEY')
+# Inicializar cliente de OpenAI (sintaxis nueva)
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 @app.route('/whatsapp', methods=['POST'])
 def whatsapp_reply():
@@ -54,7 +54,7 @@ def obtener_respuesta_gpt(mensaje, nombre_usuario="Cliente"):
     Envía el mensaje a ChatGPT y obtiene una respuesta personalizada
     """
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",  # Cambia a "gpt-3.5-turbo" si quieres ahorrar costos
             messages=[
                 {
@@ -85,27 +85,15 @@ def obtener_respuesta_gpt(mensaje, nombre_usuario="Cliente"):
                     "content": mensaje
                 }
             ],
-            max_tokens=400,  # Respuestas un poco más largas para ser útil
+            max_tokens=400,
             temperature=0.7
         )
         
         return response.choices[0].message.content
         
-    except openai.error.AuthenticationError:
-        print("❌ Error: API key de OpenAI inválida")
-        return "Lo siento, hay un problema con la configuración. Por favor contacta al administrador."
-    
-    except openai.error.RateLimitError:
-        print("❌ Error: Límite de rate excedido en OpenAI")
-        return "Estoy recibiendo muchas consultas en este momento. Por favor intenta de nuevo en unos segundos."
-    
-    except openai.error.APIError as e:
-        print(f"❌ Error de API de OpenAI: {e}")
-        return "Disculpa, no pude procesar tu consulta en este momento. ¿Podrías intentar de nuevo?"
-    
     except Exception as e:
-        print(f"❌ Error inesperado en obtener_respuesta_gpt: {e}")
-        return "Hubo un problema al procesar tu mensaje. Por favor intenta reformularlo."
+        print(f"❌ Error en obtener_respuesta_gpt: {e}")
+        return "Disculpa, no pude procesar tu consulta en este momento. ¿Podrías intentar de nuevo?"
 
 @app.route('/', methods=['GET'])
 def home():
@@ -169,11 +157,11 @@ def health():
     """
     Endpoint para verificar el estado del servicio
     """
-    return {
+    return jsonify({
         "status": "healthy",
         "service": "Metro WhatsApp Bot",
         "version": "1.0.0"
-    }, 200
+    }), 200
 
 @app.route('/test', methods=['GET'])
 def test():
@@ -182,17 +170,17 @@ def test():
     """
     try:
         respuesta = obtener_respuesta_gpt("Hola, esto es una prueba")
-        return {
+        return jsonify({
             "status": "success",
             "openai_connected": True,
             "test_response": respuesta
-        }, 200
+        }), 200
     except Exception as e:
-        return {
+        return jsonify({
             "status": "error",
             "openai_connected": False,
             "error": str(e)
-        }, 500
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
