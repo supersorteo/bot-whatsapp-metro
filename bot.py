@@ -9,8 +9,16 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Inicializar cliente de OpenAI (sintaxis nueva)
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+# Inicializar cliente de OpenAI - SOLO si la API key existe
+openai_client = None
+if os.getenv('OPENAI_API_KEY'):
+    try:
+        openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        print("✅ Cliente OpenAI inicializado correctamente")
+    except Exception as e:
+        print(f"⚠️ Error al inicializar OpenAI: {e}")
+else:
+    print("⚠️ OPENAI_API_KEY no encontrada")
 
 @app.route('/whatsapp', methods=['POST'])
 def whatsapp_reply():
@@ -32,6 +40,13 @@ def whatsapp_reply():
         print(f"Mensaje: {incoming_msg}")
         print(f"{'='*60}")
         
+        # Verificar que OpenAI esté disponible
+        if not openai_client:
+            print("❌ OpenAI client no disponible")
+            resp = MessagingResponse()
+            resp.message("Lo siento, el servicio no está disponible en este momento. Por favor intenta más tarde.")
+            return str(resp)
+        
         # Obtener respuesta de ChatGPT
         respuesta = obtener_respuesta_gpt(incoming_msg, sender_name)
         
@@ -45,6 +60,8 @@ def whatsapp_reply():
     
     except Exception as e:
         print(f"❌ Error en whatsapp_reply: {e}")
+        import traceback
+        traceback.print_exc()
         resp = MessagingResponse()
         resp.message("Disculpa, hubo un error técnico. Por favor intenta de nuevo.")
         return str(resp)
@@ -54,8 +71,8 @@ def obtener_respuesta_gpt(mensaje, nombre_usuario="Cliente"):
     Envía el mensaje a ChatGPT y obtiene una respuesta personalizada
     """
     try:
-        response = client.chat.completions.create(
-            model="gpt-4",  # Cambia a "gpt-3.5-turbo" si quieres ahorrar costos
+        response = openai_client.chat.completions.create(
+            model="gpt-4",
             messages=[
                 {
                     "role": "system",
@@ -93,6 +110,8 @@ def obtener_respuesta_gpt(mensaje, nombre_usuario="Cliente"):
         
     except Exception as e:
         print(f"❌ Error en obtener_respuesta_gpt: {e}")
+        import traceback
+        traceback.print_exc()
         return "Disculpa, no pude procesar tu consulta en este momento. ¿Podrías intentar de nuevo?"
 
 @app.route('/', methods=['GET'])
@@ -160,7 +179,8 @@ def health():
     return jsonify({
         "status": "healthy",
         "service": "Metro WhatsApp Bot",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "openai_available": openai_client is not None
     }), 200
 
 @app.route('/test', methods=['GET'])
@@ -168,6 +188,13 @@ def test():
     """
     Endpoint de prueba para verificar OpenAI
     """
+    if not openai_client:
+        return jsonify({
+            "status": "error",
+            "openai_connected": False,
+            "error": "OpenAI client not initialized - check OPENAI_API_KEY"
+        }), 500
+    
     try:
         respuesta = obtener_respuesta_gpt("Hola, esto es una prueba")
         return jsonify({
@@ -188,7 +215,8 @@ if __name__ == '__main__':
     print("🚀 METRO BOT - WHATSAPP INICIANDO")
     print("="*70)
     print(f"📍 Puerto: {port}")
-    print(f"🌐 Ambiente: {'Producción (Railway)' if port != 5000 else 'Desarrollo (Local)'}")
+    print(f"🌐 Python: 3.11")
+    print(f"🤖 OpenAI: {'Conectado' if openai_client else 'No disponible'}")
     print("="*70 + "\n")
     
     app.run(host='0.0.0.0', port=port, debug=False)
